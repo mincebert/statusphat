@@ -19,6 +19,11 @@ from threading import Thread
 from queue import Queue
 
 
+# get my hostname (we do this once and assume it doesn't change)
+
+hostname = socket.gethostname()
+
+
 # function to get the default route IP address
 
 def get_ip():
@@ -60,7 +65,8 @@ def get_temp():
 # thread function to return the [updated] status string (IP + temp)
 
 def get_status(q):
-    msg = "%s %s " % (get_ip() or "network?", get_temp() or "temp?")
+    msg = ("%s %s %s "
+              % (hostname, get_ip() or "network?", get_temp() or "temp?"))
 
     q.put(msg)
 
