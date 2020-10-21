@@ -1,0 +1,119 @@
+#!/usr/bin/env python3
+
+# statusphat - display IP address and temperature on pHAT
+
+
+__version__ = "0.1 (2020-10-21)"
+
+
+import time
+
+import scrollphathd as sphd
+from scrollphathd.fonts import font5x7
+
+import bme680
+
+import socket
+
+from threading import Thread
+from queue import Queue
+
+
+# function to get the default route IP address
+
+def get_ip():
+    # create a socket and try to connect to an address (which is
+    # unroutable, but we don't send anything, anyway, as it's a
+    # datagram socket)
+
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+    try:
+        s.connect(("192.0.2.1", 1))
+        ip = s.getsockname()[0]
+
+    except OSError:
+        # this probably means we have no route, so return no address
+
+        return None
+
+    finally:
+        s.close()
+
+    return ip
+
+
+# function to get the current temperature
+
+def get_temp():
+    try:
+        sensor = bme680.BME680(bme680.I2C_ADDR_PRIMARY)
+        sensor.set_temperature_oversample(bme680.OS_8X)
+        sensor.get_sensor_data()
+
+    except OSError:
+        return None
+
+    return "%.1f'C" % getattr(sensor.data, "temperature")
+
+
+# thread function to return the [updated] status string (IP + temp)
+
+def get_status(q):
+    msg = "%s %s " % (get_ip() or "network?", get_temp() or "temp?")
+
+    q.put(msg)
+
+
+# initialise the display
+
+sphd.rotate(180)
+sphd.set_font(font5x7)
+sphd.set_brightness(0.5)
+
+
+# create the message queue from the thread to the main program
+
+q = Queue()
+
+
+# set a default message so we're always one iteration ahead of
+# needing it for display, so there's no hold-up
+
+msg = "STATUSPHAT %s " % __version__
+
+
+# loop, scrolling the message, starting with a default message
+
+while True:
+    # create and spawn a thread to get the [updated] status
+
+    t = Thread(target=get_status, args=(q, ))
+    t.start()
+
+
+    # work out and print the message
+    #
+    # we print the message twice and take the width after the first copy so we
+    # can scroll with wraparound
+
+    sphd.clear()
+
+    sphd.write_string(msg)
+    x_offset_trigger = sphd.get_buffer_shape()[0] - sphd.get_shape()[0]
+    x_offset_end = None
+
+
+    # scroll the display
+
+    x_offset = 0
+    while (x_offset_end is None) or (x_offset < x_offset_end):
+        sphd.scroll_to(x_offset, 0)
+        sphd.show()
+        time.sleep(0.005)
+        x_offset += 1
+        if x_offset == x_offset_trigger:
+            msg = q.get()
+            x_offset_next = sphd.get_buffer_shape()[0]
+            sphd.write_string(msg, x=x_offset_next)
+            x_offset_end = x_offset + sphd.get_shape()[0]
