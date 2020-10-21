@@ -22,9 +22,9 @@ from queue import Queue
 # function to get the default route IP address
 
 def get_ip():
-    # create a socket and try to connect to an address (which is
-    # unroutable, but we don't send anything, anyway, as it's a
-    # datagram socket)
+    # create a socket and try to connect to an address (which is unroutable,
+    # but we don't send anything, anyway, as it's a datagram socket so nothing
+    # is sent just upon opening)
 
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
@@ -77,8 +77,8 @@ sphd.set_brightness(0.5)
 q = Queue()
 
 
-# set a default message so we're always one iteration ahead of
-# needing it for display, so there's no hold-up
+# set a default message so we're always one iteration ahead of needing it for
+# display, so there's no hold-up
 
 msg = "STATUSPHAT %s " % __version__
 
@@ -86,7 +86,8 @@ msg = "STATUSPHAT %s " % __version__
 # loop, scrolling the message, starting with a default message
 
 while True:
-    # create and spawn a thread to get the [updated] status
+    # create and spawn a thread to get the [updated] status - the use of a
+    # thread will ensure the data is ready by the time we need it
 
     t = Thread(target=get_status, args=(q, ))
     t.start()
@@ -100,20 +101,36 @@ while True:
     sphd.clear()
 
     sphd.write_string(msg)
-    x_offset_trigger = sphd.get_buffer_shape()[0] - sphd.get_shape()[0]
-    x_offset_end = None
+
+
+    # we know we've reached the end when we've scrolled this entire message;
+    # this will include the start of the next message that we don't have yet,
+    # but we will get it when we reach the trigger point
+
+    x_end = sphd.get_buffer_shape()[0]
+
+
+    # the trigger point is one screen before the end of the message - it's
+    # where we need the next message to tack on the end
+
+    x_trigger = x_end - sphd.get_shape()[0]
 
 
     # scroll the display
 
-    x_offset = 0
-    while (x_offset_end is None) or (x_offset < x_offset_end):
+    for x_offset in range(0, x_end):
+        # scroll to the offset position and re-show the message
+
         sphd.scroll_to(x_offset, 0)
         sphd.show()
+
+
         time.sleep(0.005)
-        x_offset += 1
-        if x_offset == x_offset_trigger:
+
+
+        # if we've reached the trigger point, get the status from the thread
+        # and add it on the end
+
+        if x_offset == x_trigger:
             msg = q.get()
-            x_offset_next = sphd.get_buffer_shape()[0]
-            sphd.write_string(msg, x=x_offset_next)
-            x_offset_end = x_offset + sphd.get_shape()[0]
+            sphd.write_string(msg, x=sphd.get_buffer_shape()[0])
